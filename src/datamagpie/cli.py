@@ -22,6 +22,7 @@ from datamagpie.sources.chembl import ChemblSource
 from datamagpie.sources.drugcentral import DrugCentralSettings, DrugCentralSource
 from datamagpie.sources.ct_ade import CtAdeSource
 from datamagpie.sources.tdc import TdcSource
+from datamagpie.sources.tox21 import Tox21Source
 
 
 DATA_DIR = Path("data")
@@ -135,6 +136,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tdc.add_argument("--name", required=True, help="TDC dataset name")
     _add_output_options(tdc)
+
+    tox21 = commands.add_parser(
+        "tox21",
+        help="query public Tox21 assay data",
+    )
+    tox21.add_argument(
+        "--operation",
+        choices=("assays", "search", "download"),
+        required=True,
+        help="Tox21 operation to run",
+    )
+    tox21.add_argument("--query", help="chemical name or Tox21 ID for search")
+    tox21.add_argument(
+        "--query-type",
+        choices=("name", "id"),
+        default="name",
+        help="search query type (default: name)",
+    )
+    tox21.add_argument(
+        "--view",
+        choices=("replicate", "aggregated"),
+        default="replicate",
+        help="search result view (default: replicate)",
+    )
+    tox21.add_argument(
+        "--protocol",
+        action="append",
+        dest="protocols",
+        help="assay protocol filter; may be repeated",
+    )
+    tox21.add_argument("--limit", type=int, default=100, help="maximum search results")
+    tox21.add_argument("--output", type=Path, help="output JSON/CSV or assay ZIP path")
+    tox21.add_argument(
+        "--description",
+        action="store_true",
+        help="include protocol descriptions when listing assays",
+    )
 
     ct_ade = commands.add_parser(
         "ct-ade",
@@ -264,6 +302,36 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"Downloaded {len(files) - 1} CT-ADE file(s) to {output_dir}.")
             print(f"Wrote manifest to {files[-1]}.")
+            return 0
+        if args.source == "tox21":
+            source = Tox21Source()
+            if args.operation == "assays":
+                assays = source.list_assays()
+                if args.description:
+                    for assay in assays:
+                        protocol = assay.get("PROTOCOL_NAME")
+                        if protocol:
+                            assay["description"] = source.assay_description(protocol=protocol)
+                write_records(assays, args.output or DATA_DIR / "tox21_assays.json")
+                return 0
+            if args.operation == "search":
+                if not args.query:
+                    raise ValueError("tox21 search requires --query")
+                rows = source.search(
+                    query=args.query,
+                    query_type=args.query_type,
+                    view=args.view,
+                    protocols=args.protocols,
+                    limit=args.limit,
+                )
+                write_records(rows, args.output or DATA_DIR / "tox21_search.json")
+                print(f"Found {len(rows)} Tox21 records.")
+                return 0
+            if len(args.protocols or []) != 1:
+                raise ValueError("tox21 download requires exactly one --protocol")
+            output = args.output or DATA_DIR / f"{args.protocols[0]}.zip"
+            source.download_assay(protocol=args.protocols[0], output=output)
+            print(f"Downloaded Tox21 assay archive to {output}.")
             return 0
         if args.source == "drugcentral":
             if args.config:

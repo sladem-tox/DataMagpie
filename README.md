@@ -164,3 +164,29 @@ datamagpie ct-ade --version soc --include-frequencies
 The CT-ADE repository is MIT-licensed, but the dataset's upstream data sources
 (including DrugBank and MedDRA) have separate terms. DataMagpie downloads the
 public release and does not redistribute those upstream source databases.
+
+## Tox21
+
+The public Tox21 Gateway provides assay metadata, chemical searches, replicate
+and aggregated results, and per-assay ZIP archives:
+
+```bash
+datamagpie tox21 --operation assays --output data/tox21_assays.json
+
+datamagpie tox21 \
+  --operation search \
+  --query aspirin \
+  --query-type name \
+  --protocol tox21-pxr-p1 \
+  --view replicate \
+  --output data/tox21_aspirin_pxr.json
+
+datamagpie tox21 \
+  --operation download \
+  --protocol tox21-pxr-p1 \
+  --output data/tox21-pxr-p1.zip
+```
+
+Search results include fields such as Tox21 ID, sample name, SMILES, protocol,
+assay outcome, curve class, AC50, efficacy, and PubChem identifiers. The
+Gateway is a public service and may apply its own availability and rate limits.
