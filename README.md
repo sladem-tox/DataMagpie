@@ -24,6 +24,12 @@ To enable the TDC integration, install its optional dependency:
 uv sync --extra tdc
 ```
 
+To enable DrugCentral support, install its optional dependencies:
+
+```bash
+uv sync --extra drugcentral
+```
+
 ## ChEMBL
 
 Query a ChEMBL resource with repeated `KEY=VALUE` filters:
@@ -92,3 +98,69 @@ datamagpie tdc --task adme --name Caco2_Wang --output caco2.csv
 Supported task families are `adme`, `tox`, `dti`, `hts`, and `drugres`.
 Results are written as JSON by default, or as CSV when the output path ends in
 `.csv`.
+
+## DrugCentral
+
+DrugCentral is a PostgreSQL database accessed through the BioClients Python
+package. Configure connection details in `~/.drugcentral.yaml`:
+
+```yaml
+DBHOST: "unmtid-dbs.net"
+DBPORT: "5433"
+DBNAME: "drugcentral"
+DBUSR: "drugman"
+DBPW: "your-password"
+DBSCHEMA: "public"
+```
+
+Then run an operation such as:
+
+```bash
+datamagpie drugcentral \
+  --operation list_structures \
+  --config ~/.drugcentral.yaml
+```
+
+Results default to `data/drugcentral_<operation>.tsv`. Operations requiring
+identifiers use `--ids`, for example:
+
+```bash
+datamagpie drugcentral \
+  --operation get_structure_by_synonym \
+  --ids aspirin \
+  --config ~/.drugcentral.yaml
+```
+
+The supported operations follow BioClients' DrugCentral API, including
+structure, product, indication, target, cross-reference, and search
+operations. Credentials should be supplied through the config file or command
+line and never committed to the repository.
+
+## CT-ADE
+
+Download the public CT-ADE benchmark releases from Hugging Face. The `soc`
+release contains system-organ-class annotations and the `pt` release contains
+preferred-term annotations:
+
+```bash
+datamagpie ct-ade --version soc
+```
+
+This downloads `train.csv`, `val.csv`, and `test.csv` to
+`data/ct-ade-soc/` and writes a `manifest.json` containing the source URLs.
+Download a single split with `--split`, which may be repeated:
+
+```bash
+datamagpie ct-ade --version pt --split test
+```
+
+The frequency matrices are much larger than the core split files and are not
+downloaded by default. Include them explicitly with:
+
+```bash
+datamagpie ct-ade --version soc --include-frequencies
+```
+
+The CT-ADE repository is MIT-licensed, but the dataset's upstream data sources
+(including DrugBank and MedDRA) have separate terms. DataMagpie downloads the
+public release and does not redistribute those upstream source databases.

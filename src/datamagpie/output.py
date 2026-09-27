@@ -12,10 +12,12 @@ def write_dataframe(frame: Any, output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.suffix.lower() == ".csv":
         frame.to_csv(output, index=False)
+    elif output.suffix.lower() == ".tsv":
+        frame.to_csv(output, sep="\t", index=False)
     elif output.suffix.lower() == ".json":
         frame.to_json(output, orient="records", indent=2)
     else:
-        raise ValueError("cleaned output must use a .csv or .json extension")
+        raise ValueError("output must use a .csv, .tsv, or .json extension")
 
 
 def _json_default(value: Any) -> str:

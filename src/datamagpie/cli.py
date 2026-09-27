@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -18,6 +19,8 @@ from datamagpie.cleaning.bioactivity import (
 )
 from datamagpie.output import write_dataframe, write_records
 from datamagpie.sources.chembl import ChemblSource
+from datamagpie.sources.drugcentral import DrugCentralSettings, DrugCentralSource
+from datamagpie.sources.ct_ade import CtAdeSource
 from datamagpie.sources.tdc import TdcSource
 
 
@@ -36,7 +39,11 @@ def _default_output(source: str, args: argparse.Namespace) -> Path:
             else f"chembl_{args.resource}"
         )
     else:
-        name = f"tdc_{args.task}_{args.name}"
+        name = (
+            f"tdc_{args.task}_{args.name}"
+            if source == "tdc"
+            else f"drugcentral_{args.operation}"
+        )
     return DATA_DIR / f"{_filename_part(name)}.json"
 
 
@@ -129,6 +136,69 @@ def build_parser() -> argparse.ArgumentParser:
     tdc.add_argument("--name", required=True, help="TDC dataset name")
     _add_output_options(tdc)
 
+    ct_ade = commands.add_parser(
+        "ct-ade",
+        help="download the public CT-ADE benchmark dataset",
+    )
+    ct_ade.add_argument(
+        "--version",
+        choices=("soc", "pt"),
+        required=True,
+        help="annotation level: SOC or PT",
+    )
+    ct_ade.add_argument(
+        "--split",
+        dest="splits",
+        choices=("train", "val", "test"),
+        action="append",
+        help="split to download; may be repeated (default: all core splits)",
+    )
+    ct_ade.add_argument(
+        "--include-frequencies",
+        action="store_true",
+        help="also download the large *_frequencies.csv files",
+    )
+    ct_ade.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        help="destination directory; defaults to data/ct-ade-<version>",
+    )
+
+    drugcentral = commands.add_parser(
+        "drugcentral",
+        help="query DrugCentral through the BioClients PostgreSQL API",
+    )
+    drugcentral.add_argument(
+        "--operation",
+        required=True,
+        choices=sorted(DrugCentralSource._operations),
+        help="DrugCentral operation to run",
+    )
+    drugcentral.add_argument(
+        "--ids",
+        nargs="+",
+        help="IDs or regular-expression search terms required by the operation",
+    )
+    drugcentral.add_argument("--xref-type", help="xref type for get_structure_by_xref")
+    drugcentral.add_argument("--dbhost", help="database host")
+    drugcentral.add_argument("--dbport", help="database port")
+    drugcentral.add_argument("--dbname", help="database name")
+    drugcentral.add_argument("--dbuser", help="database user")
+    drugcentral.add_argument("--dbpassword", help="database password")
+    drugcentral.add_argument(
+        "--config",
+        type=Path,
+        help="YAML config with DBHOST, DBPORT, DBNAME, DBUSR, and DBPW",
+    )
+    drugcentral.add_argument("--schema", default="public", help="database schema")
+    drugcentral.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="output path; defaults to data/drugcentral_<operation>.tsv",
+    )
+
     cleaning = commands.add_parser(
         "clean-bioactivity",
         help="clean and label raw bioactivity records",
@@ -183,6 +253,64 @@ def main(argv: list[str] | None = None) -> int:
             output = args.output or _default_clean_output(args.input)
             write_dataframe(cleaned, output)
             print(f"Wrote {len(cleaned)} cleaned records to {output}.")
+            return 0
+        if args.source == "ct-ade":
+            output_dir = args.output_dir or DATA_DIR / f"ct-ade-{args.version}"
+            files = CtAdeSource().download(
+                version=args.version,
+                output_dir=output_dir,
+                splits=args.splits,
+                include_frequencies=args.include_frequencies,
+            )
+            print(f"Downloaded {len(files) - 1} CT-ADE file(s) to {output_dir}.")
+            print(f"Wrote manifest to {files[-1]}.")
+            return 0
+        if args.source == "drugcentral":
+            if args.config:
+                settings = DrugCentralSource.settings_from_file(args.config)
+            elif all(
+                value
+                for value in (
+                    args.dbhost,
+                    args.dbport,
+                    args.dbname,
+                    args.dbuser,
+                    args.dbpassword,
+                )
+            ):
+                settings = DrugCentralSettings(
+                    host=args.dbhost,
+                    port=args.dbport,
+                    database=args.dbname,
+                    user=args.dbuser,
+                    password=args.dbpassword,
+                    schema=args.schema,
+                )
+            else:
+                raise ValueError(
+                    "provide --config or all of --dbhost, --dbport, --dbname, "
+                    "--dbuser, and --dbpassword"
+                )
+            result = DrugCentralSource().execute(
+                operation=args.operation,
+                settings=settings,
+                ids=args.ids,
+                xref_type=args.xref_type,
+            )
+            output = args.output or DATA_DIR / f"drugcentral_{args.operation}.tsv"
+            if isinstance(result, pd.DataFrame):
+                write_dataframe(result, output)
+            elif isinstance(result, dict):
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(
+                    json.dumps(result, indent=2, default=str),
+                    encoding="utf-8",
+                )
+            else:
+                raise ValueError(
+                    f"DrugCentral operation {args.operation} returned unsupported output"
+                )
+            print(f"Wrote DrugCentral results to {output}.")
             return 0
         if args.source == "chembl":
             source = ChemblSource()

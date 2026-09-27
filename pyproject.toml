@@ -16,6 +16,11 @@ dependencies = [
 tdc = [
     "PyTDC>=1.1.14",
 ]
+drugcentral = [
+    "bioclients>=0.2.33",
+    "psycopg2-binary>=2.9.9",
+    "pyyaml>=6.0.1",
+]
 
 [project.scripts]
 datamagpie = "datamagpie.cli:main"
